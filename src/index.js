@@ -1,10 +1,8 @@
 
-// import Notiflix from 'notiflix';
-// import SimpleLightbox from "simplelightbox";
+import Notiflix from 'notiflix';
+import SimpleLightbox from "simplelightbox";
 import ImagesApiService from "./js/api";
-// import './css/styles.css';
-// import "simplelightbox/dist/simple-lightbox.min.css";
-// import ImagesApiService from "./js/image-service";
+import "simplelightbox/dist/simple-lightbox.min.css";
 
 const refs = {
     searchForm: document.querySelector('#search-form'),
@@ -13,27 +11,50 @@ const refs = {
 }
 
 const imagesApiService = new ImagesApiService();
+const gallery = new SimpleLightbox('.gallery a', {
+    captions: true,
+    captionDelay: 250});
 
 refs.searchForm.addEventListener('submit', onSearch);
 refs.loadMoreBtn.addEventListener('click', onLoadMore)
 
-function onSearch(e) {
+async function onSearch(e) {
     e.preventDefault();
 
-    imagesApiService.query = e.currentTarget.elements.searchQuery.value;
     imagesApiService.resetPage();
-    imagesApiService.fetchImage().then(hits => appendPhotoMarcup(hits));
     
+    imagesApiService.query = e.currentTarget.elements.searchQuery.value;
+
+    refs.loadMoreBtn.classList.add('is-hidden')
+
+    if (imagesApiService.query === '') {
+       return Notiflix.Notify.failure('Sorry, there are no images matching your search query. Please try again.');
+    }
+    clearGalleryContainer();
+    
+
+    try {
+        const query = await imagesApiService.fetchImage();
+        if (query.hits.length === 0) throw new Error("No data");
+        appendPhotoMarcup(query);
+        Notiflix.Notify.success(`Hooray! We found ${query.totalHits} images.`)
+        if (query.hits.length >= 40) refs.loadMoreBtn.classList.remove('is-hidden');
+    } catch (error) {
+        onError();
+    }
 }
 
-function onLoadMore(e) {
-    imagesApiService.fetchImage().then(hits => console.log(hits));
-}
+async function onLoadMore(e) {
+    const query = await imagesApiService.fetchImage();
+    appendPhotoMarcup(query)
+    };
 
 function createMarcupGallery(hits) {
     return hits.map(({ webformatURL, largeImageURL, tags, likes, views, comments, downloads }) => `
     <div class="photo-card">
-        <img src="${webformatURL}" alt="${tags}" loading="lazy" />
+        <a class="gallery__item" href="${largeImageURL}">
+        <img class="gallery__image" src="${webformatURL}" alt="${tags}" loading="lazy" />
+        </a>
         <div class="info">
         <p class="info-item">
             <b>Likes</b>${likes}
@@ -48,10 +69,23 @@ function createMarcupGallery(hits) {
             <b>Downloads</b>${downloads}
         </p>
         </div>
-    </div>`).join("");
+    </div>
+    `).join("");
 } 
 
-function appendPhotoMarcup(hits) {
-    refs.galleryContainer.insertAdjacentHTML('beforeend', createMarcupGallery(hits))
+function appendPhotoMarcup(data) {
+    if ((data.totalHits - ((imagesApiService.page-1) * 40)) < 1) {
+        refs.loadMoreBtn.classList.add('is-hidden');
+        Notiflix.Notify.failure(`We're sorry, but you've reached the end of search results.`)
+    }
+    refs.galleryContainer.insertAdjacentHTML('beforeend', createMarcupGallery(data.hits));
+    gallery.refresh()
 }
 
+function clearGalleryContainer() {
+    refs.galleryContainer.innerHTML = '';
+}
+
+function onError() {
+        return Notiflix.Notify.failure('Sorry, there are no images matching your search query. Please try again.')
+}
